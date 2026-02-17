@@ -27,7 +27,16 @@ git clone https://github.com/glassd/unqork-audit-logs.git
 cd unqork-audit-logs
 python3 -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
 pip install -e .
+```
+
+The `requirements.txt` installs all dependencies. The `pip install -e .` step registers the `unqork-logs` command on your PATH.
+
+If you just want the dependencies without the CLI shortcut, `pip install -r requirements.txt` is sufficient and you can run the tool with:
+
+```bash
+python -m unqork_audit_logs --help
 ```
 
 ## Configuration
