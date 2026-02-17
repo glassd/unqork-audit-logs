@@ -55,17 +55,48 @@ UNQORK_CLIENT_ID=your-client-id
 UNQORK_CLIENT_SECRET=your-client-secret
 ```
 
-If your environment uses a self-signed SSL certificate, add:
+### Self-signed SSL certificates
+
+If your Unqork environment uses a self-signed or internal SSL certificate, API requests will fail with a certificate verification error. To disable SSL verification, add this to your `.env`:
 
 ```
 UNQORK_VERIFY_SSL=false
 ```
 
-Verify everything is configured correctly:
+This applies to all API calls: authentication, log fetching, and file downloads.
+
+### Testing your configuration
+
+Run the config check to verify your credentials and connectivity:
 
 ```bash
 unqork-logs config check
 ```
+
+This will attempt to authenticate against your Unqork environment and report the result:
+
+```
+         Configuration Status
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Check            ┃ Status                    ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Environment URL  │ https://yourenv.unqork.io  │
+│ Settings Loaded  │ OK                        │
+│ Authentication   │ OK                        │
+└──────────────────┴───────────────────────────┘
+```
+
+If authentication fails, you'll see the specific error (invalid credentials, unreachable host, SSL error, etc.).
+
+### Environment variables reference
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `UNQORK_BASE_URL` | Yes | -- | Your Unqork environment URL (e.g., `https://mycompany.unqork.io`) |
+| `UNQORK_CLIENT_ID` | Yes | -- | OAuth 2.0 client ID from API Access Management |
+| `UNQORK_CLIENT_SECRET` | Yes | -- | OAuth 2.0 client secret |
+| `UNQORK_VERIFY_SSL` | No | `true` | Set to `false` for self-signed SSL certificates |
+| `UNQORK_DATA_DIR` | No | `~/.unqork-logs` | Directory for the local SQLite cache |
 
 ## Usage
 
