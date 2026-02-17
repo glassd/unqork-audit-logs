@@ -131,6 +131,15 @@ class LogCache:
             raw = parsed.raw_json
             entry_id = _entry_id(raw)
 
+            # Diagnostic: log entries where key nested fields are empty
+            if not entry.actor_id and not entry.outcome_type:
+                logger.debug(
+                    "Entry %s has empty actor_id and outcome_type. "
+                    "Raw JSON (first 500 chars): %s",
+                    entry_id,
+                    raw[:500],
+                )
+
             try:
                 conn.execute(
                     """

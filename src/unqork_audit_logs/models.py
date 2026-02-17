@@ -15,12 +15,16 @@ from pydantic import BaseModel, Field
 class Identifier(BaseModel):
     """Identifier within an audit log object or actor."""
 
+    model_config = {"populate_by_name": True}
+
     type: str = ""
     value: str = ""
 
 
 class Outcome(BaseModel):
     """Outcome of the audited event."""
+
+    model_config = {"populate_by_name": True}
 
     type: str = ""  # "success" or "failure"
     failure_reason: str | None = Field(default=None, alias="failureReason")
@@ -30,6 +34,8 @@ class Outcome(BaseModel):
 class Actor(BaseModel):
     """The user or system that performed the action."""
 
+    model_config = {"populate_by_name": True}
+
     type: str = ""  # e.g., "user"
     identifier: Identifier = Field(default_factory=Identifier)
     attributes: dict[str, Any] = Field(default_factory=dict)
@@ -37,6 +43,8 @@ class Actor(BaseModel):
 
 class Context(BaseModel):
     """Request context for the audit event."""
+
+    model_config = {"populate_by_name": True}
 
     environment: str = ""
     session_id: str | None = Field(default=None, alias="sessionId")
@@ -48,6 +56,8 @@ class Context(BaseModel):
 
 class ObjectDetail(BaseModel):
     """Details of the object affected by the audited event."""
+
+    model_config = {"populate_by_name": True}
 
     type: str = ""
     identifier: Identifier = Field(default_factory=Identifier)
