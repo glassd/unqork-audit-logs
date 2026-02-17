@@ -55,6 +55,12 @@ UNQORK_CLIENT_ID=your-client-id
 UNQORK_CLIENT_SECRET=your-client-secret
 ```
 
+If your environment uses a self-signed SSL certificate, add:
+
+```
+UNQORK_VERIFY_SSL=false
+```
+
 Verify everything is configured correctly:
 
 ```bash

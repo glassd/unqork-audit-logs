@@ -32,6 +32,9 @@ class Settings(BaseModel):
     # Token refresh buffer - re-authenticate when this many seconds remain
     token_refresh_buffer_seconds: int = 300  # 5 minutes
 
+    # SSL verification - set to False for self-signed certificates
+    verify_ssl: bool = True
+
     @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, v: str) -> str:
@@ -85,10 +88,12 @@ def load_settings() -> Settings:
         )
 
     data_dir = Path(os.getenv("UNQORK_DATA_DIR", str(DEFAULT_DATA_DIR)))
+    verify_ssl = os.getenv("UNQORK_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
     return Settings(
         base_url=base_url,
         client_id=client_id,
         client_secret=client_secret,
         data_dir=data_dir,
+        verify_ssl=verify_ssl,
     )

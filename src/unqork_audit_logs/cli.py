@@ -356,7 +356,10 @@ def config_check(
 
     try:
         async def _test_auth():
-            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0),
+                verify=settings.verify_ssl,
+            ) as client:
                 await token_manager.get_token(client)
 
         asyncio.run(_test_auth())

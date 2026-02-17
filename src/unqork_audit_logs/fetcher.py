@@ -102,7 +102,10 @@ async def fetch_audit_logs(
     token_manager = TokenManager(settings)
     api_client = AuditLogClient(settings, token_manager)
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(60.0),
+        verify=settings.verify_ssl,
+    ) as client:
         for window_start, window_end in windows:
             # Skip already-fetched windows
             if cache.is_window_fetched(window_start, window_end):
