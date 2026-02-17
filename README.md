@@ -23,7 +23,7 @@ Unqork provides an API for retrieving audit logs but no built-in interface for v
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/unqork-audit-logs.git
+git clone https://github.com/glassd/unqork-audit-logs.git
 cd unqork-audit-logs
 python3 -m venv .venv
 source .venv/bin/activate
