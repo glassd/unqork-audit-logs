@@ -13,7 +13,6 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from unqork_audit_logs.models import AuditLogEntry
 from unqork_audit_logs.parser import ParsedEntry
 
 logger = logging.getLogger(__name__)
@@ -63,6 +62,61 @@ CREATE INDEX IF NOT EXISTS idx_log_client_ip ON log_entries(client_ip);
 def _entry_id(raw_json: str) -> str:
     """Generate a deterministic ID for a log entry based on its content."""
     return hashlib.sha256(raw_json.encode("utf-8")).hexdigest()[:16]
+
+
+def _safe_get(d: dict, *keys: str, default: str = "") -> str:
+    """Safely traverse nested dicts, returning default if any key is missing."""
+    current = d
+    for key in keys:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+        if current is None:
+            return default
+    return str(current) if current is not None else default
+
+
+def _extract_fields(raw: dict) -> dict:
+    """Extract indexed fields from raw audit log JSON.
+
+    Extracts from the raw dict directly rather than relying on Pydantic model
+    traversal, to be resilient to any structural differences between the
+    documented schema and actual API responses.
+
+    Based on the documented structure at https://docs.unqork.io/docs/audit-logs:
+        object.actor.identifier.value  -> actor_id
+        object.actor.type              -> actor_type
+        object.outcome.type            -> outcome_type
+        object.context.clientIp        -> client_ip
+        object.context.environment     -> environment
+        object.context.host            -> host
+        object.context.sessionId       -> session_id
+        object.type                    -> object_type
+    """
+    obj = raw.get("object", {}) or {}
+
+    return {
+        "date": raw.get("date", ""),
+        "timestamp": raw.get("timestamp", ""),
+        "event_type": raw.get("eventType", raw.get("event_type", "")),
+        "category": raw.get("category", ""),
+        "action": raw.get("action", ""),
+        "source": raw.get("source", ""),
+        "outcome_type": _safe_get(obj, "outcome", "type"),
+        "actor_type": _safe_get(obj, "actor", "type"),
+        "actor_id": _safe_get(obj, "actor", "identifier", "value"),
+        "environment": _safe_get(obj, "context", "environment"),
+        "client_ip": (
+            _safe_get(obj, "context", "clientIp")
+            or _safe_get(obj, "context", "client_ip")
+        ),
+        "host": _safe_get(obj, "context", "host"),
+        "session_id": (
+            _safe_get(obj, "context", "sessionId")
+            or _safe_get(obj, "context", "session_id")
+        ),
+        "object_type": _safe_get(obj, "type"),
+    }
 
 
 class LogCache:
@@ -127,12 +181,22 @@ class LogCache:
         inserted = 0
 
         for parsed in entries:
-            entry = parsed.entry
             raw = parsed.raw_json
             entry_id = _entry_id(raw)
 
+            # Extract fields directly from raw JSON for resilience —
+            # avoids dependency on Pydantic model correctly parsing all
+            # nested structures, which may vary from documented schema.
+            try:
+                raw_dict = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.warning("Skipping entry with invalid JSON: %s", entry_id)
+                continue
+
+            fields = _extract_fields(raw_dict)
+
             # Diagnostic: log entries where key nested fields are empty
-            if not entry.actor_id and not entry.outcome_type:
+            if not fields["actor_id"] and not fields["outcome_type"]:
                 logger.debug(
                     "Entry %s has empty actor_id and outcome_type. "
                     "Raw JSON (first 500 chars): %s",
@@ -153,20 +217,20 @@ class LogCache:
                     (
                         entry_id,
                         raw,
-                        entry.date,
-                        entry.timestamp,
-                        entry.event_type,
-                        entry.category,
-                        entry.action,
-                        entry.source,
-                        entry.outcome_type,
-                        entry.object.actor.type,
-                        entry.actor_id,
-                        entry.environment,
-                        entry.client_ip or "",
-                        entry.host,
-                        entry.session_id or "",
-                        entry.object.type,
+                        fields["date"],
+                        fields["timestamp"],
+                        fields["event_type"],
+                        fields["category"],
+                        fields["action"],
+                        fields["source"],
+                        fields["outcome_type"],
+                        fields["actor_type"],
+                        fields["actor_id"],
+                        fields["environment"],
+                        fields["client_ip"],
+                        fields["host"],
+                        fields["session_id"],
+                        fields["object_type"],
                         window_start,
                     ),
                 )

@@ -261,6 +261,53 @@ def show(
     display_entry_detail(entry)
 
 
+# ── dump ─────────────────────────────────────────────────────────────────────
+
+
+@app.command()
+def dump(
+    limit: int = typer.Option(5, "--limit", "-n", help="Number of entries to dump."),
+    offset: int = typer.Option(0, "--offset", help="Offset for pagination."),
+    category: Optional[str] = typer.Option(None, "--category", "-c"),
+    action: Optional[str] = typer.Option(None, "--action", "-a"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Dump raw JSON of cached entries for debugging.
+
+    Shows the original API JSON alongside the extracted indexed fields,
+    making it easy to diagnose parsing issues.
+    """
+    _setup_logging(verbose)
+
+    import json
+
+    cache = _get_cache()
+    entries = cache.query_entries(
+        category=category, action=action, limit=limit, offset=offset,
+    )
+    cache.close()
+
+    if not entries:
+        console.print("[dim]No cached entries found.[/dim]")
+        raise typer.Exit(0)
+
+    for i, entry in enumerate(entries):
+        display_console.print(f"\n[bold]--- Entry {offset + i + 1} (ID: {entry['id']}) ---[/bold]")
+        display_console.print(f"[dim]Indexed fields:[/dim]")
+        for key in ("timestamp", "category", "action", "actor_id", "outcome_type",
+                     "client_ip", "environment", "host", "session_id", "source"):
+            val = entry.get(key, "")
+            color = "green" if val else "red"
+            display_console.print(f"  {key}: [{color}]{val!r}[/{color}]")
+
+        display_console.print(f"[dim]Raw JSON:[/dim]")
+        try:
+            parsed = json.loads(entry.get("raw_json", "{}"))
+            display_console.print_json(json.dumps(parsed, indent=2))
+        except json.JSONDecodeError:
+            display_console.print(entry.get("raw_json", ""))
+
+
 # ── export ───────────────────────────────────────────────────────────────────
 
 
