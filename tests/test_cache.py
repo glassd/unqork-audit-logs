@@ -98,6 +98,58 @@ class TestExtractFields:
         fields = _extract_fields(raw)
         assert fields["actor_id"] == ""
 
+    def test_actor_from_attributes_userId(self):
+        """Many event types store the actor in object.attributes.userId."""
+        raw = {
+            "category": "data-access",
+            "action": "get-module-submissions",
+            "object": {
+                "type": "submission",
+                "identifier": {"type": "name", "value": "some-module"},
+                "attributes": {"userId": "jane@company.com", "moduleId": "abc123"},
+                "outcome": {"type": "success"},
+                "actor": {"type": "user", "identifier": {"type": "user-id", "value": ""}},
+                "context": {"environment": "prod", "clientIp": "10.0.0.1"},
+            },
+        }
+        fields = _extract_fields(raw)
+        assert fields["actor_id"] == "jane@company.com"
+        assert fields["outcome_type"] == "success"
+        assert fields["client_ip"] == "10.0.0.1"
+
+    def test_actor_from_attributes_email(self):
+        """User admin events store the actor in object.attributes.email."""
+        raw = {
+            "category": "user-management",
+            "action": "add-designer-user",
+            "object": {
+                "type": "designer-user",
+                "identifier": {"type": "name", "value": "New User"},
+                "attributes": {"email": "admin@company.com", "name": "Admin"},
+                "outcome": {"type": "success"},
+                "actor": {"type": "user", "identifier": {}},
+                "context": {"environment": "staging", "clientIp": "10.0.0.2"},
+            },
+        }
+        fields = _extract_fields(raw)
+        assert fields["actor_id"] == "admin@company.com"
+
+    def test_actor_prefers_identifier_over_attributes(self):
+        """When both paths have values, prefer actor.identifier.value."""
+        raw = {
+            "object": {
+                "attributes": {"userId": "attributes-user@co.com"},
+                "actor": {
+                    "type": "user",
+                    "identifier": {"type": "user-id", "value": "actor-user@co.com"},
+                },
+                "outcome": {"type": "success"},
+                "context": {},
+            },
+        }
+        fields = _extract_fields(raw)
+        assert fields["actor_id"] == "actor-user@co.com"
+
 
 class TestLogCache:
     def test_store_and_query(self, tmp_cache):

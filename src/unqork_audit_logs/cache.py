@@ -83,17 +83,23 @@ def _extract_fields(raw: dict) -> dict:
     traversal, to be resilient to any structural differences between the
     documented schema and actual API responses.
 
-    Based on the documented structure at https://docs.unqork.io/docs/audit-logs:
-        object.actor.identifier.value  -> actor_id
-        object.actor.type              -> actor_type
-        object.outcome.type            -> outcome_type
-        object.context.clientIp        -> client_ip
-        object.context.environment     -> environment
-        object.context.host            -> host
-        object.context.sessionId       -> session_id
-        object.type                    -> object_type
+    Actor ID is checked at multiple paths because different event types
+    store the actor identity in different locations:
+        - object.actor.identifier.value  (docs example: delete-designer-role)
+        - object.attributes.userId       (login/logout, submission events)
+        - object.attributes.email        (user administration events)
+
+    See https://docs.unqork.io/docs/audit-logs and category-specific pages.
     """
     obj = raw.get("object", {}) or {}
+    attrs = obj.get("attributes", {}) or {}
+
+    # Actor: try the documented path first, then common alternatives
+    actor_id = (
+        _safe_get(obj, "actor", "identifier", "value")
+        or _safe_get(attrs, "userId")
+        or _safe_get(attrs, "email")
+    )
 
     return {
         "date": raw.get("date", ""),
@@ -104,7 +110,7 @@ def _extract_fields(raw: dict) -> dict:
         "source": raw.get("source", ""),
         "outcome_type": _safe_get(obj, "outcome", "type"),
         "actor_type": _safe_get(obj, "actor", "type"),
-        "actor_id": _safe_get(obj, "actor", "identifier", "value"),
+        "actor_id": actor_id,
         "environment": _safe_get(obj, "context", "environment"),
         "client_ip": (
             _safe_get(obj, "context", "clientIp")
