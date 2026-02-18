@@ -150,6 +150,57 @@ class TestExtractFields:
         fields = _extract_fields(raw)
         assert fields["actor_id"] == "actor-user@co.com"
 
+    def test_root_level_outcome_and_context(self):
+        """Real API returns outcome and context at the root level, not inside object."""
+        raw = {
+            "date": "2025-01-15T10:30:00.000000Z",
+            "timestamp": "2025-01-15T10:30:00.000Z",
+            "eventType": "designer-action",
+            "category": "user-access",
+            "action": "designer-user-login",
+            "source": "designer-api",
+            "outcome": {"type": "success"},
+            "context": {
+                "environment": "production",
+                "sessionId": "sess-abc-123",
+                "clientIp": "192.168.1.50",
+                "protocol": "https",
+                "host": "myco.unqork.io",
+                "userAgent": "Mozilla/5.0",
+            },
+            "object": {
+                "type": "session",
+                "identifier": {"type": "name", "value": "login-session"},
+                "attributes": {"userId": "admin@myco.com"},
+            },
+        }
+        fields = _extract_fields(raw)
+        assert fields["outcome_type"] == "success"
+        assert fields["client_ip"] == "192.168.1.50"
+        assert fields["environment"] == "production"
+        assert fields["host"] == "myco.unqork.io"
+        assert fields["session_id"] == "sess-abc-123"
+        assert fields["actor_id"] == "admin@myco.com"
+        assert fields["category"] == "user-access"
+        assert fields["action"] == "designer-user-login"
+
+    def test_root_level_failure_outcome(self):
+        """Verify failure outcomes at root level are captured."""
+        raw = {
+            "category": "user-access",
+            "action": "designer-user-login",
+            "outcome": {"type": "failure", "failureReason": "invalid password"},
+            "context": {"clientIp": "10.0.0.99"},
+            "object": {
+                "type": "session",
+                "attributes": {"userId": "user@co.com"},
+            },
+        }
+        fields = _extract_fields(raw)
+        assert fields["outcome_type"] == "failure"
+        assert fields["client_ip"] == "10.0.0.99"
+        assert fields["actor_id"] == "user@co.com"
+
 
 class TestLogCache:
     def test_store_and_query(self, tmp_cache):

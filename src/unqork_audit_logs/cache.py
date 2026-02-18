@@ -83,22 +83,63 @@ def _extract_fields(raw: dict) -> dict:
     traversal, to be resilient to any structural differences between the
     documented schema and actual API responses.
 
-    Actor ID is checked at multiple paths because different event types
-    store the actor identity in different locations:
-        - object.actor.identifier.value  (docs example: delete-designer-role)
-        - object.attributes.userId       (login/logout, submission events)
-        - object.attributes.email        (user administration events)
+    The docs example nests outcome, context, and actor inside ``object``,
+    but the real API returns outcome and context at the **root level**:
+
+        Docs example:          Real API:
+        object.outcome.type    outcome.type
+        object.context.clientIp context.clientIp
+        object.actor.id.value  object.attributes.userId
+
+    We check both locations (root first, then object) for resilience.
 
     See https://docs.unqork.io/docs/audit-logs and category-specific pages.
     """
     obj = raw.get("object", {}) or {}
     attrs = obj.get("attributes", {}) or {}
 
-    # Actor: try the documented path first, then common alternatives
+    # Actor: try documented path, then common alternatives in attributes
     actor_id = (
         _safe_get(obj, "actor", "identifier", "value")
         or _safe_get(attrs, "userId")
         or _safe_get(attrs, "email")
+    )
+
+    # Outcome: check root level first (real API), then inside object (docs)
+    outcome_type = (
+        _safe_get(raw, "outcome", "type")
+        or _safe_get(obj, "outcome", "type")
+    )
+
+    # Context: check root level first (real API), then inside object (docs)
+    root_ctx = raw.get("context", {}) or {}
+    obj_ctx = obj.get("context", {}) or {}
+
+    client_ip = (
+        _safe_get(root_ctx, "clientIp")
+        or _safe_get(root_ctx, "client_ip")
+        or _safe_get(obj_ctx, "clientIp")
+        or _safe_get(obj_ctx, "client_ip")
+    )
+    environment = (
+        _safe_get(root_ctx, "environment")
+        or _safe_get(obj_ctx, "environment")
+    )
+    host = (
+        _safe_get(root_ctx, "host")
+        or _safe_get(obj_ctx, "host")
+    )
+    session_id = (
+        _safe_get(root_ctx, "sessionId")
+        or _safe_get(root_ctx, "session_id")
+        or _safe_get(obj_ctx, "sessionId")
+        or _safe_get(obj_ctx, "session_id")
+    )
+
+    # Actor type: check root level then inside object
+    actor_type = (
+        _safe_get(raw, "actor", "type")
+        or _safe_get(obj, "actor", "type")
     )
 
     return {
@@ -108,19 +149,13 @@ def _extract_fields(raw: dict) -> dict:
         "category": raw.get("category", ""),
         "action": raw.get("action", ""),
         "source": raw.get("source", ""),
-        "outcome_type": _safe_get(obj, "outcome", "type"),
-        "actor_type": _safe_get(obj, "actor", "type"),
+        "outcome_type": outcome_type,
+        "actor_type": actor_type,
         "actor_id": actor_id,
-        "environment": _safe_get(obj, "context", "environment"),
-        "client_ip": (
-            _safe_get(obj, "context", "clientIp")
-            or _safe_get(obj, "context", "client_ip")
-        ),
-        "host": _safe_get(obj, "context", "host"),
-        "session_id": (
-            _safe_get(obj, "context", "sessionId")
-            or _safe_get(obj, "context", "session_id")
-        ),
+        "environment": environment,
+        "client_ip": client_ip,
+        "host": host,
+        "session_id": session_id,
         "object_type": _safe_get(obj, "type"),
     }
 
