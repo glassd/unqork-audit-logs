@@ -21,8 +21,18 @@ from unqork_audit_logs.parser import parse_log_files
 
 logger = logging.getLogger(__name__)
 
-# Unqork API requires ISO 8601 UTC with milliseconds
-DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S.000Z"
+# Unqork API requires ISO 8601 UTC with milliseconds.
+# Seconds and milliseconds must always be zero.
+DATETIME_FORMAT = "%Y-%m-%dT%H:%M:00.000Z"
+
+
+def _truncate_to_minute(dt: datetime) -> datetime:
+    """Truncate a datetime to the minute, zeroing seconds and microseconds.
+
+    The Unqork audit logs API only accepts times with hours and minutes;
+    seconds and milliseconds must be zero.
+    """
+    return dt.replace(second=0, microsecond=0)
 
 
 def generate_windows(
@@ -31,12 +41,15 @@ def generate_windows(
     """Split a date range into 1-hour windows.
 
     Args:
-        start: Range start (UTC).
-        end: Range end (UTC).
+        start: Range start (UTC), will be truncated to the minute.
+        end: Range end (UTC), will be truncated to the minute.
 
     Returns:
         List of (start_str, end_str) tuples in Unqork's required format.
     """
+    start = _truncate_to_minute(start)
+    end = _truncate_to_minute(end)
+
     windows = []
     current = start
     while current < end:
@@ -197,35 +210,41 @@ def parse_datetime_input(value: str) -> datetime:
     """
     value = value.strip()
 
+    dt: datetime | None = None
+
     # Full ISO format with Z
     if value.endswith("Z"):
         value = value[:-1] + "+00:00"
-        return datetime.fromisoformat(value)
+        dt = datetime.fromisoformat(value)
+    else:
+        # Try various formats
+        for fmt in [
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d",
+        ]:
+            try:
+                dt = datetime.strptime(value, fmt)
+                break
+            except ValueError:
+                continue
 
-    # Try various formats
-    for fmt in [
-        "%Y-%m-%dT%H:%M:%S.%f%z",
-        "%Y-%m-%dT%H:%M:%S%z",
-        "%Y-%m-%dT%H:%M:%S.%f",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%d",
-    ]:
-        try:
-            dt = datetime.strptime(value, fmt)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-        except ValueError:
-            continue
+    if dt is None:
+        raise ValueError(
+            f"Cannot parse datetime '{value}'. "
+            f"Expected format like '2025-02-17', '2025-02-17 09:00', "
+            f"or '2025-02-17T09:00:00.000Z'"
+        )
 
-    raise ValueError(
-        f"Cannot parse datetime '{value}'. "
-        f"Expected format like '2025-02-17', '2025-02-17 09:00', "
-        f"or '2025-02-17T09:00:00.000Z'"
-    )
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    return _truncate_to_minute(dt)
 
 
 def parse_relative_time(value: str) -> tuple[datetime, datetime]:
@@ -235,7 +254,7 @@ def parse_relative_time(value: str) -> tuple[datetime, datetime]:
         Tuple of (start, end) datetimes in UTC, where end is now.
     """
     value = value.strip().lower()
-    now = datetime.now(timezone.utc)
+    now = _truncate_to_minute(datetime.now(timezone.utc))
 
     if value.endswith("h"):
         hours = int(value[:-1])

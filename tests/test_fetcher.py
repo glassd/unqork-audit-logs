@@ -64,10 +64,11 @@ class TestParseDatetimeInput:
         assert dt.minute == 0
 
     def test_date_time_seconds(self):
+        """Seconds are truncated to zero — API only accepts HH:MM:00.000Z."""
         dt = parse_datetime_input("2025-02-17 09:30:45")
         assert dt.hour == 9
         assert dt.minute == 30
-        assert dt.second == 45
+        assert dt.second == 0
 
     def test_invalid_raises(self):
         import pytest
