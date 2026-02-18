@@ -368,13 +368,16 @@ class LogCache:
         if conditions:
             where = "WHERE " + " AND ".join(conditions)
 
+        # LIMIT -1 means no limit in SQLite; use it when limit is 0 or negative
+        effective_limit = limit if limit > 0 else -1
+
         query = f"""
             SELECT * FROM log_entries
             {where}
             ORDER BY timestamp DESC
             LIMIT ? OFFSET ?
         """
-        params.extend([limit, offset])
+        params.extend([effective_limit, offset])
 
         rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]

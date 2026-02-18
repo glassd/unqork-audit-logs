@@ -323,7 +323,7 @@ def export(
     actor: Optional[str] = typer.Option(None, "--actor"),
     outcome: Optional[str] = typer.Option(None, "--outcome"),
     search: Optional[str] = typer.Option(None, "--search", "-q"),
-    limit: int = typer.Option(10000, "--limit", "-n", help="Max entries to export."),
+    limit: int = typer.Option(0, "--limit", "-n", help="Max entries to export (0 = unlimited)."),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Export cached audit log entries to a file."""
@@ -368,7 +368,7 @@ def summary(
     from unqork_audit_logs.filters import build_filters
     from unqork_audit_logs.summary import display_summary
 
-    filters = build_filters(start=start, end=end, last=last, limit=100000)
+    filters = build_filters(start=start, end=end, last=last, limit=0)
 
     cache = _get_cache()
     entries = cache.query_entries(**filters.as_query_kwargs())
