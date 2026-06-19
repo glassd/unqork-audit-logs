@@ -291,6 +291,10 @@ class AuditLogApp(App):
         table = self.query_one("#table", DataTable)
         table.add_columns("Timestamp", "Category", "Action", "Actor", "Outcome", "IP")
         self.title = "Unqork Audit Logs"
+        # Load the next page when the viewport is scrolled near the bottom by
+        # any means (mouse wheel, scrollbar, keyboard) — not just when the
+        # row cursor moves.
+        self.watch(table, "scroll_y", self._on_table_scroll, init=False)
         self._reload()
         table.focus()
 
@@ -377,6 +381,14 @@ class AuditLogApp(App):
     ) -> None:
         # Infinite scroll: load the next page as the cursor nears the bottom.
         if event.cursor_row >= self._offset - 20 and self._offset < self._total:
+            self._load_more()
+
+    def _on_table_scroll(self) -> None:
+        # Infinite scroll on viewport movement (mouse wheel, scrollbar drag).
+        if self._offset >= self._total:
+            return
+        table = self.query_one("#table", DataTable)
+        if table.max_scroll_y - table.scroll_y <= 3:
             self._load_more()
 
     # ── actions ───────────────────────────────────────────────────────────

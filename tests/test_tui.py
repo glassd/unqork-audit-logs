@@ -8,12 +8,41 @@ import pytest
 
 from textual.widgets import DataTable, Input
 
+from unqork_audit_logs.cache import LogCache
+from unqork_audit_logs.models import AuditLogEntry
+from unqork_audit_logs.parser import ParsedEntry
 from unqork_audit_logs.tui import (
+    PAGE_SIZE,
     AuditLogApp,
     build_view_filters,
     load_filters_file,
     parse_since,
 )
+
+
+def _big_cache(tmp_path, n: int) -> LogCache:
+    """Build a cache populated with ``n`` distinct entries."""
+    cache = LogCache(tmp_path / "big.db")
+    entries = []
+    for i in range(n):
+        raw = {
+            "timestamp": f"2025-02-17T{i // 60:02d}:{i % 60:02d}:00.000Z",
+            "category": "user-access",
+            "action": f"action-{i}",
+            "source": "designer-api",
+            "object": {
+                "type": "session",
+                "outcome": {"type": "success"},
+                "actor": {"identifier": {"value": f"user-{i}@co.com"}},
+                "context": {"clientIp": "10.0.0.1"},
+            },
+        }
+        entry = AuditLogEntry.model_validate(raw)
+        entries.append(
+            ParsedEntry(entry=entry, raw_json=json.dumps(raw, separators=(",", ":")))
+        )
+    cache.store_window("2025-02-17T00:00:00.000Z", "2025-02-17T05:00:00.000Z", entries, 1)
+    return cache
 
 
 class TestParseSince:
@@ -95,6 +124,32 @@ class TestApp:
             await pilot.pause()
             table = app.query_one("#table", DataTable)
             assert table.row_count == 5
+
+    async def test_first_page_is_capped(self, tmp_path):
+        cache = _big_cache(tmp_path, 250)
+        app = AuditLogApp(cache)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            table = app.query_one("#table", DataTable)
+            assert table.row_count == PAGE_SIZE  # only the first page loaded
+        cache.close()
+
+    async def test_scrolling_to_bottom_loads_next_page(self, tmp_path):
+        """Scrolling the viewport (not moving the cursor) loads more rows."""
+        cache = _big_cache(tmp_path, 250)
+        app = AuditLogApp(cache)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            table = app.query_one("#table", DataTable)
+            assert table.row_count == PAGE_SIZE
+
+            # Jump the scroll position to the bottom and let the watcher fire,
+            # mimicking a mouse-wheel scroll to the end of the loaded page.
+            table.scroll_end(animate=False)
+            await pilot.pause()
+            await pilot.pause()
+            assert table.row_count == 250  # remaining 50 loaded in
+        cache.close()
 
     async def test_export_callback_writes_file(self, tmp_cache, tmp_path):
         out = tmp_path / "export.csv"
