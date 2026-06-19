@@ -72,6 +72,10 @@ def fetch(
         None, "--last", "-l",
         help="Relative time range (e.g. '24h', '7d', '30m'). Alternative to --start/--end.",
     ),
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Re-fetch windows already in the cache (fills gaps; no duplicates).",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
 ) -> None:
     """Fetch audit logs from the Unqork API and cache them locally."""
@@ -162,7 +166,9 @@ def fetch(
         progress_tracker.on_error = on_error
 
         asyncio.run(
-            fetch_audit_logs(settings, cache, start_dt, end_dt, progress_tracker)
+            fetch_audit_logs(
+                settings, cache, start_dt, end_dt, progress_tracker, force=force
+            )
         )
 
     display_fetch_summary(
@@ -214,6 +220,66 @@ def list_entries(
     cache.close()
 
     display_entries_table(entries, total, offset=offset)
+
+
+# ── view ─────────────────────────────────────────────────────────────────────
+
+
+@app.command()
+def view(
+    start: Optional[str] = typer.Option(None, "--start", "-s", help="Initial: filter from datetime."),
+    end: Optional[str] = typer.Option(None, "--end", "-e", help="Initial: filter to datetime."),
+    last: Optional[str] = typer.Option(None, "--last", "-l", help="Initial: relative time (e.g. '24h')."),
+    category: Optional[str] = typer.Option(None, "--category", "-c", help="Initial category filter."),
+    action: Optional[str] = typer.Option(None, "--action", "-a", help="Initial action filter."),
+    actor: Optional[str] = typer.Option(None, "--actor", help="Initial actor filter."),
+    outcome: Optional[str] = typer.Option(None, "--outcome", "-o", help="Initial outcome filter."),
+    ip: Optional[str] = typer.Option(None, "--ip", help="Initial client IP filter."),
+    search: Optional[str] = typer.Option(None, "--search", "-q", help="Initial free-text search."),
+    filters_file: Optional[str] = typer.Option(
+        None, "--filters", help="Load initial filters from a saved JSON file (see 'save filters' in the app)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Open an interactive browser to filter, search, and export cached logs."""
+    _setup_logging(verbose)
+
+    try:
+        from unqork_audit_logs.tui import load_filters_file, run_tui
+    except ImportError:
+        console.print(
+            "[red]The interactive viewer requires the 'textual' package.[/red]\n"
+            "Install it with: pip install textual"
+        )
+        raise typer.Exit(1)
+
+    # Build the initial filter field values for the viewer.
+    initial: dict[str, str] = {}
+    if filters_file:
+        try:
+            initial.update(load_filters_file(filters_file))
+        except (OSError, ValueError) as e:
+            console.print(f"[red]Could not load filters file:[/red] {e}")
+            raise typer.Exit(1)
+
+    # Explicit options override the loaded file. 'since' maps to start/last.
+    explicit = {
+        "category": category, "action": action, "actor": actor,
+        "outcome": outcome, "ip": ip, "search": search,
+    }
+    for key, val in explicit.items():
+        if val is not None:
+            initial[key] = val
+    if last is not None:
+        initial["since"] = last
+    elif start is not None:
+        initial["since"] = start
+
+    cache = _get_cache()
+    try:
+        run_tui(cache, initial_filters=initial)
+    finally:
+        cache.close()
 
 
 # ── show ─────────────────────────────────────────────────────────────────────

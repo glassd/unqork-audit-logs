@@ -26,8 +26,10 @@ class TestBuildFilters:
 
     def test_explicit_start_end(self):
         f = build_filters(start="2025-02-17", end="2025-02-18")
+        # Start is pinned to .000Z; end to .999Z so sub-second events on the
+        # boundary minute are included rather than dropped by string compare.
         assert f.start == "2025-02-17T00:00:00.000Z"
-        assert f.end == "2025-02-18T00:00:00.000Z"
+        assert f.end == "2025-02-18T00:00:00.999Z"
 
     def test_last_overrides_start_end(self):
         """When --last is provided, it should set start and end."""

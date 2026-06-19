@@ -89,6 +89,7 @@ async def fetch_audit_logs(
     start: datetime,
     end: datetime,
     progress: FetchProgress | None = None,
+    force: bool = False,
 ) -> FetchProgress:
     """Fetch audit logs for a date range, storing results in the cache.
 
@@ -101,6 +102,8 @@ async def fetch_audit_logs(
         start: Range start (UTC).
         end: Range end (UTC).
         progress: Optional progress tracker for UI updates.
+        force: Re-fetch windows even if they are already cached. Inserts are
+            idempotent, so this fills gaps without creating duplicates.
 
     Returns:
         The FetchProgress with final statistics.
@@ -120,8 +123,8 @@ async def fetch_audit_logs(
         verify=settings.verify_ssl,
     ) as client:
         for window_start, window_end in windows:
-            # Skip already-fetched windows
-            if cache.is_window_fetched(window_start, window_end):
+            # Skip already-fetched windows (unless forcing a re-fetch)
+            if not force and cache.is_window_fetched(window_start, window_end):
                 progress.skipped_windows += 1
                 progress.completed_windows += 1
                 if progress.on_window_skip:
@@ -158,17 +161,14 @@ async def fetch_audit_logs(
 
             # Download all files for this window concurrently
             def _file_progress(completed: int, total: int) -> None:
-                progress.downloaded_files = (
-                    progress.downloaded_files - total + completed
-                )
                 if progress.on_file_progress:
                     progress.on_file_progress(completed, total)
 
             try:
-                file_data_list = await api_client.download_log_files(
+                file_data_list, failed_files = await api_client.download_log_files(
                     client, locations, on_progress=_file_progress
                 )
-                progress.downloaded_files += len(locations)
+                progress.downloaded_files += len(file_data_list)
             except Exception as e:
                 error_msg = f"Failed downloading files for {window_start}: {e}"
                 logger.error(error_msg)
@@ -181,17 +181,30 @@ async def fetch_audit_logs(
             entries = parse_log_files(file_data_list)
             progress.total_entries += len(entries)
 
-            # Store in cache
+            # If some files failed to download, store what we got but leave the
+            # window unmarked so it is re-fetched (and gaps filled) next run.
+            partial = failed_files > 0
             new_count = cache.store_window(
-                window_start, window_end, entries, len(locations)
+                window_start, window_end, entries, len(locations),
+                mark_fetched=not partial,
             )
             progress.new_entries += new_count
-            progress.completed_windows += 1
 
-            if progress.on_window_complete:
-                progress.on_window_complete(
-                    window_start, window_end, len(entries), new_count
+            if partial:
+                error_msg = (
+                    f"{failed_files}/{len(locations)} files failed for "
+                    f"{window_start}; window will be retried on next fetch"
                 )
+                logger.warning(error_msg)
+                progress.errors.append(error_msg)
+                if progress.on_error:
+                    progress.on_error(window_start, window_end, error_msg)
+            else:
+                progress.completed_windows += 1
+                if progress.on_window_complete:
+                    progress.on_window_complete(
+                        window_start, window_end, len(entries), new_count
+                    )
 
     return progress
 

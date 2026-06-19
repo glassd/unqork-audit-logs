@@ -60,6 +60,9 @@ class FilterParams:
             "action": self.action,
             "actor": self.actor,
             "outcome": self.outcome,
+            "source": self.source,
+            "ip": self.ip,
+            "search": self.search,
         }
 
 
@@ -101,17 +104,22 @@ def build_filters(
     start_str = None
     end_str = None
 
+    # Stored timestamps carry millisecond precision (e.g. ...:38.338Z), and
+    # filters compare lexically. Pin the start boundary to .000Z (inclusive
+    # from the start of the minute) and the end boundary to .999Z so that
+    # sub-second events on the boundary minute are included rather than
+    # silently dropped.
     if last:
         s, e = parse_relative_time(last)
         start_str = s.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        end_str = e.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        end_str = e.strftime("%Y-%m-%dT%H:%M:%S.999Z")
     else:
         if start:
             dt = parse_datetime_input(start)
             start_str = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         if end:
             dt = parse_datetime_input(end)
-            end_str = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            end_str = dt.strftime("%Y-%m-%dT%H:%M:%S.999Z")
 
     return FilterParams(
         start=start_str,

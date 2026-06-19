@@ -29,6 +29,11 @@ class Settings(BaseModel):
     # Concurrency settings for file downloads
     max_concurrent_downloads: int = 15
 
+    # Retry settings for transient API failures (429, 5xx, network errors).
+    # Delay grows as retry_backoff_base * 2 ** attempt between attempts.
+    max_retries: int = 3
+    retry_backoff_base: float = 0.5  # seconds
+
     # Token refresh buffer - re-authenticate when this many seconds remain
     token_refresh_buffer_seconds: int = 300  # 5 minutes
 

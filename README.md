@@ -10,6 +10,7 @@ Unqork provides an API for retrieving audit logs but no built-in interface for v
 - **Cache** fetched logs locally in SQLite for instant re-querying without hitting the API
 - **Filter** by date range, category, action, actor, outcome, source, IP, or free-text search
 - **View** entries in a color-coded terminal table or a detailed JSON panel
+- **Browse** interactively with a full-screen terminal app: live filtering, search, paged scrolling, in-app export, and saveable filter sets
 - **Export** to JSON, JSONL, or CSV (JSON export preserves the original API response exactly)
 - **Summarize** with breakdowns by category, action, actor, IP, and failure analysis
 - **Incremental fetching** -- already-fetched time windows are skipped automatically
@@ -117,6 +118,14 @@ unqork-logs fetch --start "2025-02-17 09:00" --end "2025-02-17 15:00"
 
 Re-running a fetch for the same time range is fast -- windows already in the cache are skipped.
 
+```bash
+# Force a re-fetch of windows already in the cache (e.g. to fill gaps left by
+# a transient API error). Re-fetching never creates duplicates.
+unqork-logs fetch --last 24h --force
+```
+
+Transient API failures (HTTP 429/5xx and network errors) are retried automatically with exponential backoff. If some log files in a window still fail to download, the entries that did download are saved and the window is left un-cached so it is re-fetched on the next run.
+
 ### Listing and filtering
 
 Query the local cache. All filters are optional and can be combined.
@@ -149,6 +158,42 @@ unqork-logs list --category user-access --outcome failure --last 7d
 # Pagination
 unqork-logs list --limit 50 --offset 100
 ```
+
+### Interactive viewer
+
+For exploring logs without re-running `list` with different flags, launch the
+interactive terminal app:
+
+```bash
+# Open the interactive browser over all cached entries
+unqork-logs view
+
+# Pre-seed the filters when launching
+unqork-logs view --category user-access --outcome failure
+unqork-logs view --last 24h --search login
+
+# Restore a previously saved filter set
+unqork-logs view --filters my-filters.json
+```
+
+Inside the app:
+
+| Key | Action |
+|---|---|
+| `/` | Jump to the search box |
+| `f` | Jump to the filter fields |
+| `Enter` (in a field) | Apply filters and refresh |
+| `Enter` (on a row) | Open the full entry detail / JSON |
+| `e` | Export the current filtered set (choose format + path) |
+| `w` | Save the current filters to a JSON file |
+| `x` | Clear all filters |
+| `r` | Reload from the cache |
+| `q` | Quit |
+
+The table loads results in pages and fetches more as you scroll, so it stays
+responsive even over large caches. Filtering, search, export, and save all
+operate on the **full** filtered result set, not just the rows currently on
+screen.
 
 ### Viewing a single entry
 
@@ -250,6 +295,7 @@ See the [Unqork Audit Logs documentation](https://docs.unqork.io/docs/audit-logs
 ```
 src/unqork_audit_logs/
     cli.py          CLI entry point (Typer)
+    tui.py          Interactive terminal viewer (Textual)
     config.py       Environment variable loading and validation
     auth.py         OAuth 2.0 client credentials with automatic token refresh
     client.py       Async HTTP client for the audit logs API

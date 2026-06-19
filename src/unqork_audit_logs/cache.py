@@ -206,6 +206,7 @@ class LogCache:
         window_end: str,
         entries: list[ParsedEntry],
         file_count: int,
+        mark_fetched: bool = True,
     ) -> int:
         """Store log entries for a fetched window.
 
@@ -214,6 +215,10 @@ class LogCache:
             window_end: ISO 8601 UTC window end.
             entries: Parsed entries (model + original raw JSON) to store.
             file_count: Number of files downloaded for this window.
+            mark_fetched: Whether to record the window as fully fetched. Pass
+                ``False`` when only part of the window was downloaded so it
+                remains eligible for re-fetch (inserts are idempotent, so
+                re-fetching will not create duplicates).
 
         Returns:
             Number of new entries inserted (excludes duplicates).
@@ -280,21 +285,22 @@ class LogCache:
             except sqlite3.Error as e:
                 logger.warning("Failed to insert entry: %s", e)
 
-        # Record the window as fetched
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO fetched_windows
-            (window_start, window_end, fetched_at, file_count, entry_count)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                window_start,
-                window_end,
-                datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                file_count,
-                len(entries),
-            ),
-        )
+        # Record the window as fetched (unless this was a partial download).
+        if mark_fetched:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO fetched_windows
+                (window_start, window_end, fetched_at, file_count, entry_count)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    window_start,
+                    window_end,
+                    datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    file_count,
+                    len(entries),
+                ),
+            )
 
         conn.commit()
         logger.debug(
@@ -390,8 +396,15 @@ class LogCache:
         action: str | None = None,
         actor: str | None = None,
         outcome: str | None = None,
+        source: str | None = None,
+        ip: str | None = None,
+        search: str | None = None,
     ) -> int:
-        """Count entries matching the given filters."""
+        """Count entries matching the given filters.
+
+        Accepts the same filter arguments as :meth:`query_entries` so that
+        pagination totals stay consistent with the rows actually returned.
+        """
         conn = self._get_conn()
         conditions: list[str] = []
         params: list[str] = []
@@ -414,6 +427,19 @@ class LogCache:
         if outcome:
             conditions.append("outcome_type LIKE ?")
             params.append(f"%{outcome}%")
+        if source:
+            conditions.append("source LIKE ?")
+            params.append(f"%{source}%")
+        if ip:
+            conditions.append("client_ip LIKE ?")
+            params.append(f"%{ip}%")
+        if search:
+            conditions.append(
+                "(raw_json LIKE ? OR action LIKE ? OR category LIKE ? "
+                "OR actor_id LIKE ? OR environment LIKE ?)"
+            )
+            term = f"%{search}%"
+            params.extend([term, term, term, term, term])
 
         where = ""
         if conditions:

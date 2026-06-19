@@ -9,6 +9,24 @@ from unqork_audit_logs.models import AuditLogEntry
 from unqork_audit_logs.parser import ParsedEntry
 
 
+def _fresh_parsed_entry(index: int) -> ParsedEntry:
+    """Build a unique ParsedEntry not present in the shared fixture."""
+    raw = {
+        "timestamp": f"2025-03-01T00:{index:02d}:00.000Z",
+        "category": "configuration",
+        "action": f"unique-action-{index}",
+        "source": "designer-api",
+        "object": {
+            "type": "module",
+            "outcome": {"type": "success"},
+            "actor": {"identifier": {"value": f"user-{index}@co.com"}},
+            "context": {"clientIp": "10.0.0.9"},
+        },
+    }
+    entry = AuditLogEntry.model_validate(raw)
+    return ParsedEntry(entry=entry, raw_json=json.dumps(raw, separators=(",", ":")))
+
+
 # The exact example from https://docs.unqork.io/docs/audit-logs
 DOCS_SAMPLE = {
     "date": "2022-12-19T19:46:38.000000Z",
@@ -249,6 +267,35 @@ class TestLogCache:
         assert total == 5
         failures = tmp_cache.count_entries(outcome="failure")
         assert failures == 1
+
+    def test_count_entries_honors_ip_source_search(self, tmp_cache):
+        """count_entries must apply the same ip/source/search filters as
+        query_entries so pagination totals stay consistent."""
+        # All sample entries share ip 10.0.0.1 and source designer-api.
+        assert tmp_cache.count_entries(ip="10.0.0.1") == 5
+        assert tmp_cache.count_entries(ip="203.0.113.9") == 0
+        assert tmp_cache.count_entries(source="designer-api") == 5
+        assert tmp_cache.count_entries(source="nonexistent-source") == 0
+
+        # Search should match the same rows query_entries returns.
+        query_hits = tmp_cache.query_entries(search="delete", limit=0)
+        assert tmp_cache.count_entries(search="delete") == len(query_hits)
+
+    def test_store_window_partial_not_marked_fetched(
+        self, tmp_cache, sample_parsed_entries
+    ):
+        """A partial download stores entries but leaves the window unmarked
+        so it remains eligible for re-fetch."""
+        ws, we = "2025-03-01T00:00:00.000Z", "2025-03-01T01:00:00.000Z"
+        before = tmp_cache.count_entries()
+        # Use fresh entries (distinct indices) so they aren't deduped against
+        # the fixture's existing rows.
+        fresh = [_fresh_parsed_entry(20), _fresh_parsed_entry(21)]
+        tmp_cache.store_window(ws, we, fresh, 5, mark_fetched=False)
+        # Entries are stored...
+        assert tmp_cache.count_entries() == before + 2
+        # ...but the window is NOT recorded as fetched.
+        assert not tmp_cache.is_window_fetched(ws, we)
 
     def test_get_entry_by_id(self, tmp_cache):
         all_entries = tmp_cache.query_entries()
