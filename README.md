@@ -15,6 +15,30 @@ Unqork provides an API for retrieving audit logs but no built-in interface for v
 - **Summarize** with breakdowns by category, action, actor, IP, and failure analysis
 - **Incremental fetching** -- already-fetched time windows are skipped automatically
 
+## Quick start
+
+```bash
+# 1. Install
+git clone https://github.com/glassd/unqork-audit-logs.git
+cd unqork-audit-logs
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && pip install -e .
+
+# 2. Configure your Unqork credentials
+cp .env.example .env          # then edit .env with your URL + OAuth client
+
+# 3. Verify connectivity
+unqork-logs config check
+
+# 4. Fetch some logs into the local cache
+unqork-logs fetch --last 24h
+
+# 5. Explore them interactively
+unqork-logs view
+```
+
+Each step is explained in detail in the sections below.
+
 ## Prerequisites
 
 - Python 3.11+
@@ -149,6 +173,9 @@ unqork-logs list --outcome failure
 # Filter by client IP
 unqork-logs list --ip 10.0.0.1
 
+# Filter by source (e.g. designer-api)
+unqork-logs list --source designer-api
+
 # Free-text search across all fields
 unqork-logs list --search "delete"
 
@@ -201,6 +228,20 @@ Show the full detail of a log entry, including syntax-highlighted JSON. You can 
 
 ```bash
 unqork-logs show fc64fa7da8
+```
+
+### Inspecting raw entries (debugging)
+
+If indexed fields (actor, outcome, client IP) look empty or wrong, the `dump`
+command prints the original API JSON next to the extracted fields for a few
+entries, making parsing issues easy to spot:
+
+```bash
+# Dump the 5 most recent entries
+unqork-logs dump --limit 5
+
+# Dump entries from a specific category
+unqork-logs dump --category data-access --limit 3
 ```
 
 ### Exporting
@@ -309,8 +350,8 @@ src/unqork_audit_logs/
     summary.py      Statistics and analytics
 
 tests/
-    test_models.py, test_parser.py, test_cache.py,
-    test_fetcher.py, test_filters.py, test_export.py
+    test_models.py, test_parser.py, test_cache.py, test_client.py,
+    test_fetcher.py, test_filters.py, test_export.py, test_tui.py
 ```
 
 ## Development
